@@ -1,0 +1,75 @@
+services:
+  vllm:
+    build: .
+    image: vllm-mxfp4-spark:txn545-qwen3.5-122b-nvfp4
+    container_name: vllm-txn545-qwen3.5-122b-nvfp4
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - VLLM_USAGE_SOURCE=production
+      # BF16 matmul precision (NVFP4 dequant 후 BF16 연산)
+      - TORCH_MATMUL_PRECISION=high
+      # CUDA 할당기 단편화 억제 (장시간 추론 안정성)
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      # NVFP4 MoE:
+      # VLLM_USE_FLASHINFER_MOE_FP4=1 → flashinfer-cutlass 사용 시도
+      #   - latency: TRT-LLM JIT (SM100/10.x 전용) → SM12x 실패
+      #   - throughput: SM120 MXFP4_MINIMAL → FP8 activations 필요, BF16 전달 시 실패
+      # VLLM_USE_FLASHINFER_MOE_FP4=0 (기본값) → native cutlass_moe_fp4 사용 → SM12x 정상 동작
+      # [Experimental] Force Marlin W4A16 MoE backend instead of CUTLASS W4A4.
+      # Avarok saw +13% on their build; on SM121 with native CUTLASS FP4 it may be slower.
+      # Set to "1" to enable; "0" (default) keeps native CUTLASS.
+      - VLLM_NVFP4_MOE_FORCE_MARLIN=0
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ${MODEL_HOST_PATH}:/models/vLLM_txn545_Qwen3.5-122B-A10B-NVFP4:ro
+      - ./.cache/flashinfer:/root/.cache/flashinfer
+      - ./.cache/vllm:/root/.cache/vllm
+    ports:
+      - "${HOST_PORT}:8000"
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    # MTP speculative decoding is disabled: the NVFP4 checkpoint has no mtp.* weights
+    # (stripped during quantization). To enable once BF16 MTP weights are sourced, add:
+    #   --speculative-config '{"method":"mtp","num_speculative_tokens":1}'
+    # The Dockerfile already contains the mtp_quant_exclusion_fix patch for BF16 inference.
+    command: >
+      vllm serve /models/vLLM_txn545_Qwen3.5-122B-A10B-NVFP4
+      --served-model-name vLLM_txn545_Qwen3.5-122B-A10B-NVFP4
+      --tensor-parallel-size 1
+      --max-model-len ${MAX_MODEL_LEN}
+      --max-num-seqs ${MAX_NUM_SEQS}
+      --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}
+      --swap-space ${SWAP_SPACE}
+      --trust-remote-code
+      --host 0.0.0.0
+      --port 8000
+      --dtype auto
+      --kv-cache-dtype auto
+      --attention-backend flashinfer
+      --enable-chunked-prefill
+      --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS}
+      --load-format safetensors
+      --enable-prefix-caching
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    external: true
