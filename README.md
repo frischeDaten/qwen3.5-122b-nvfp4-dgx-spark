@@ -121,6 +121,49 @@ This forces these layers to use `UnquantizedLinearMethod` (BF16), matching the a
 
 ---
 
+## Benchmarks (2026-03-01)
+
+Hardware: NVIDIA DGX Spark (GB10, SM121), single GPU, NVFP4 W4A4
+Test: code generation (binary search), `max_tokens=512`, `temperature=0.0`
+Metric: end-to-end tok/s (thinking + content tokens, warm runs average)
+
+### MoE Backend: CUTLASS vs Marlin
+
+| Backend | Avg tok/s | Notes |
+|---|---|---|
+| **CUTLASS W4A4** (native) | **15.2** | SM121 native FP4 tensor cores |
+| Marlin W4A16 | 15.3 | No benefit on SM121; "Not enough SMs for max_autotune_gemm" |
+
+### KV Cache: BF16 vs FP8
+
+| KV dtype | Available KV memory | 262K concurrent capacity |
+|---|---|---|
+| BF16 (auto) | ~12 GiB | ~3.7x |
+| **FP8** | **24.59 GiB** | **7.45x** |
+
+### MTP Speculative Decoding
+
+| Configuration | Avg tok/s | vs Baseline |
+|---|---|---|
+| FP8 KV, no MTP | 15.2 | baseline |
+| **FP8 KV + MTP (n=1)** | **24.5** | **+61%** |
+
+> MTP weights (785 keys, 4.7 GB BF16) extracted from original [Qwen/Qwen3.5-122B-A10B](https://huggingface.co/Qwen/Qwen3.5-122B-A10B) and merged into the NVFP4 checkpoint.
+
+### Final Configuration
+
+| Setting | Value |
+|---|---|
+| MoE backend | CUTLASS W4A4 (native) |
+| KV cache dtype | FP8 |
+| MTP spec decode | Enabled (`num_speculative_tokens=1`) |
+| Chunked prefill | Enabled |
+| torch.compile | Enabled (CUDA graph) |
+| **Throughput** | **24.5 tok/s** |
+| 262K concurrent | 5.58x |
+
+---
+
 ## References
 
 - **Model weights** – [Sehyo/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/Sehyo/Qwen3.5-122B-A10B-NVFP4) on Hugging Face
