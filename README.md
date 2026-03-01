@@ -141,13 +141,18 @@ Metric: end-to-end tok/s (thinking + content tokens, warm runs average)
 | BF16 (auto) | ~12 GiB | ~3.7x |
 | **FP8** | **24.59 GiB** | **7.45x** |
 
-### MTP Speculative Decoding
+### MTP Speculative Decoding (5 runs each)
 
-| Configuration | Avg tok/s | vs Baseline |
-|---|---|---|
-| FP8 KV, no MTP | 15.2 | baseline |
-| **FP8 KV + MTP (n=1)** | **24.5** | **+61%** |
+| | MTP OFF (tok/s) | MTP ON (tok/s) | Change |
+|---|---|---|---|
+| Run 1 | 7.8* | 24.5 | — |
+| Run 2 | 15.2 | 24.6 | +62% |
+| Run 3 | 15.1 | 24.4 | +62% |
+| Run 4 | 15.1 | 24.4 | +62% |
+| Run 5 | 15.2 | 24.4 | +61% |
+| **Avg (warm)** | **15.15** | **24.46** | **+61.5%** |
 
+> \*Run 1 is cold start (torch.compile + CUDA graph first capture).
 > MTP weights (785 keys, 4.7 GB BF16) extracted from original [Qwen/Qwen3.5-122B-A10B](https://huggingface.co/Qwen/Qwen3.5-122B-A10B) and merged into the NVFP4 checkpoint.
 
 ### Final Configuration
