@@ -1,5 +1,6 @@
 # =========================================================
-# vLLM for Sehyo/Qwen3.5-122B-A10B-NVFP4 (DGX Spark / SM121)
+# vLLM for Qwen3.5-122B-A10B-NVFP4 (DGX Spark / SM121)
+# Quantized model: txn545/Qwen3.5-122B-A10B-NVFP4
 #
 # Base: vllm-mxfp4-spark:latest
 #   - SM121/GB10 최적화 flashinfer-cutlass + NVFP4 지원

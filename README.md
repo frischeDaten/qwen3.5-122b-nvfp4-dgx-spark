@@ -1,6 +1,6 @@
-# vLLM – Sehyo/Qwen3.5-122B-A10B-NVFP4 on DGX Spark
+# vLLM – Qwen3.5-122B-A10B-NVFP4 on DGX Spark
 
-Run [Sehyo/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/Sehyo/Qwen3.5-122B-A10B-NVFP4) with vLLM on **NVIDIA DGX Spark (GB10 / SM121)**.
+Run [txn545/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) with vLLM on **NVIDIA DGX Spark (GB10 / SM121)**.
 
 This image extends `vllm-mxfp4-spark:latest` — a SM121-optimised vLLM build with NVFP4 + FlashInfer-CUTLASS support — and adds the custom model class required to serve the Qwen3.5 VL MoE architecture.
 
@@ -28,7 +28,7 @@ This image extends `vllm-mxfp4-spark:latest` — a SM121-optimised vLLM build wi
 | Base image `vllm-mxfp4-spark:latest` | Build from [spark-vllm-docker](https://github.com/JungkwanBan/spark-vllm-docker) with `--exp-mxfp4` |
 | Docker Compose v2 | `docker compose` (not `docker-compose`) |
 | External Docker network `monitoring` | `docker network create monitoring` |
-| Model weights | Download from [Hugging Face](https://huggingface.co/Sehyo/Qwen3.5-122B-A10B-NVFP4) |
+| Model weights | Download from [Hugging Face](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) |
 
 ---
 
@@ -37,8 +37,8 @@ This image extends `vllm-mxfp4-spark:latest` — a SM121-optimised vLLM build wi
 ### 1. Clone this repository
 
 ```bash
-git clone git@github.com:JungkwanBan/Spark_vLLM_Sehyo_Qwen3.5-122B-A10B-NVFP4.git
-cd Spark_vLLM_Sehyo_Qwen3.5-122B-A10B-NVFP4
+git clone git@github.com:JungkwanBan/SPARK_Qwen3.5-122B-A10B-NVFP4.git
+cd SPARK_Qwen3.5-122B-A10B-NVFP4
 ```
 
 ### 2. Configure environment
@@ -52,7 +52,7 @@ Key variables in `.env`:
 
 | Variable | Default (example) | Description |
 |---|---|---|
-| `MODEL_HOST_PATH` | `/path/to/Sehyo_Qwen3.5-122B-A10B-NVFP4` | Host path to the downloaded model |
+| `MODEL_HOST_PATH` | `/path/to/Qwen3.5-122B-A10B-NVFP4` | Host path to the downloaded model |
 | `HOST_PORT` | `8000` | Port exposed on the host |
 | `MAX_MODEL_LEN` | `131072` | Max sequence length (model max: 262144) |
 | `MAX_NUM_SEQS` | `4` | Max concurrent sequences |
@@ -79,7 +79,7 @@ docker compose logs -f   # watch startup (~5-10 min for weight loading)
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Sehyo_Qwen3.5-122B-A10B-NVFP4",
+    "model": "txn545_Qwen3.5-122B-A10B-NVFP4",
     "messages": [{"role": "user", "content": "Hello!"}],
     "max_tokens": 100
   }'
@@ -209,7 +209,7 @@ Metric: total completion_tokens (thinking + content) / wall time
 
 ## References
 
-- **Model weights** – [Sehyo/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/Sehyo/Qwen3.5-122B-A10B-NVFP4) on Hugging Face
+- **Model weights** – [txn545/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) on Hugging Face
 - **Base model** – [Qwen/Qwen3.5-122B-A10B-Instruct](https://huggingface.co/Qwen/Qwen3.5-122B-A10B-Instruct) — Qwen Team, Alibaba Cloud
 - **Quantization tool** – [llm-compressor](https://github.com/vllm-project/llm-compressor) (SparseML / Neural Magic)
 - **vLLM** – [vllm-project/vllm](https://github.com/vllm-project/vllm)
