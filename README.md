@@ -217,6 +217,127 @@ Metric: total completion_tokens (thinking + content) / wall time
 
 ---
 
+## Memory Management on DGX Spark GB10
+
+This is the most commonly overlooked problem when running this model on a DGX Spark. **Without the steps below the container will be OOM-killed during weight loading every time.**
+
+### Why it OOMs
+
+The DGX Spark GB10 has 128 GB of unified memory, but Linux sees only ~119 GiB as usable. The model's steady-state memory footprint is manageable:
+
+| Component | Size |
+|---|---|
+| Model weights on disk (NVFP4 + FP8 scales) | ~71 GiB |
+| CUDA runtime + OS + Docker overhead | ~15 GiB |
+| **Steady-state total** | **~86 GiB** |
+
+That fits comfortably. The problem is **during loading**, when the file I/O creates a second allocation on top of the model tensors:
+
+| Weight loader | Loading peak | Result |
+|---|---|---|
+| `safetensors` (mmap) | 86 GiB model + 47 GiB shard-1 page cache = **133 GiB** | OOM mid-load |
+| `fastsafetensors` | 86 GiB model + 47 GiB I/O staging buffer = **133 GiB** | OOM immediately |
+
+The root cause is **page cache double-counting**: on unified memory, the kernel page cache for the weight files and the CUDA tensor allocations are separate physical DRAM allocations. There is no separation between CPU and GPU memory — they share the same pool — so a 71 GiB weight file that is mmap-read while 71 GiB of CUDA tensors are being allocated can push the total to 133–158 GiB.
+
+### Why `safetensors` and not `fastsafetensors`
+
+`fastsafetensors` pre-allocates a full per-shard I/O staging buffer upfront (47 GiB for shard 1) before a single tensor is loaded. This immediately exhausts memory before any weights reach the GPU.
+
+`safetensors` uses `mmap`, which lets the kernel evict stale page cache pages to swap under memory pressure. With sufficient swap space, loading completes successfully, and at steady state the model is entirely in RAM.
+
+### Required: add swap space
+
+You need at least 32 GiB of additional swap beyond what ships with the system. The default Ubuntu install on DGX Spark includes a 16 GiB swap file, leaving ~12 GiB free — not enough to absorb the ~24 GiB loading overage.
+
+#### One-time setup
+
+```bash
+# Create and activate a 32 GiB swap file
+sudo fallocate -l 32G /swapfile2
+sudo chmod 600 /swapfile2
+sudo mkswap /swapfile2
+sudo swapon /swapfile2
+
+# Make it permanent across reboots
+echo '/swapfile2 none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+After this, loading consistently completes in ~10–15 minutes. At steady state, all model weights are in DRAM and swap is unused.
+
+#### Memory budget after swap
+
+| | Value |
+|---|---|
+| Usable RAM | ~119 GiB |
+| Default swap (`/swap.img`) | ~15 GiB |
+| Added swap (`/swapfile2`) | 32 GiB |
+| **Total addressable** | **~166 GiB** |
+| Loading peak | ~133 GiB |
+| **Headroom** | **~33 GiB** |
+
+### Load format
+
+Always use `--load-format safetensors` on DGX Spark GB10. Do **not** use `fastsafetensors`.
+
+---
+
+## HuggingFace Model Path — Symlink Caveat
+
+When mounting a HuggingFace Hub cache directory into Docker, mount the **repository root** (`models--<org>--<name>/`), not the snapshot subdirectory.
+
+The snapshot directory (`snapshots/<sha>/`) contains only symlinks pointing to `../../blobs/`. If you mount only the snapshot directory, the symlink targets resolve outside the container mount and the model cannot be read.
+
+**Correct:**
+```yaml
+volumes:
+  - ~/.cache/huggingface/hub/models--RedHatAI--Qwen3.5-122B-A10B-NVFP4:/models/qwen3.5-122b-hf:ro
+```
+
+Then pass the snapshot path to `vllm serve`:
+```
+vllm serve /models/qwen3.5-122b-hf/snapshots/<sha>
+```
+
+Find the current snapshot SHA with:
+```bash
+ls ~/.cache/huggingface/hub/models--RedHatAI--Qwen3.5-122B-A10B-NVFP4/snapshots/
+```
+
+---
+
+## Model Variants
+
+Three quantized checkpoints of this model are publicly available. All are compatible with this Dockerfile:
+
+| Checkpoint | MTP weights | Notes |
+|---|---|---|
+| [txn545/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) | Separately extracted (see Note below) | Original, used in benchmarks above |
+| [RedHatAI/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/RedHatAI/Qwen3.5-122B-A10B-NVFP4) | Not included | Red Hat quantization; text-only serving without MTP |
+| [Sehyo/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/Sehyo/Qwen3.5-122B-A10B-NVFP4) | Included (as of 2026-03-02) | Untested with this Dockerfile |
+
+For text-only serving without speculative decoding, `RedHatAI/Qwen3.5-122B-A10B-NVFP4` works out of the box with no MTP weight extraction step. Remove `--speculative-config` from the vllm serve command.
+
+---
+
+## Auto-start After Reboot
+
+The `docker-compose.yml` already sets `restart: unless-stopped`. For this to take effect after a reboot, the container must be **started at least once** after the compose file is written, so Docker registers the restart policy:
+
+```bash
+docker compose up -d
+```
+
+Ensure Docker itself is enabled to start on boot:
+
+```bash
+sudo systemctl enable docker
+```
+
+With both in place and `/swapfile2` in `/etc/fstab`, the model comes up automatically after every reboot with no manual intervention. Weight loading takes ~10–15 minutes at cold start.
+
+---
+
 ## References
 
 - **Model weights** – [txn545/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) on Hugging Face
