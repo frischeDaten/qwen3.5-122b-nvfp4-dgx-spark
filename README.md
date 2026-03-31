@@ -7,7 +7,7 @@ This repository documents the additional steps required to run `RedHatAI/Qwen3.5
 > **[bjk110/SPARK_Qwen3.5-122B-A10B-NVFP4](https://github.com/bjk110/SPARK_Qwen3.5-122B-A10B-NVFP4)** — original Dockerfile, all vLLM patches, MTP setup, benchmarks
 > (later consolidated into [JungkwanBan/spark_vllm_docker](https://github.com/JungkwanBan/spark_vllm_docker))
 
-My contribution is the three sections below: solving the OOM problem during weight loading, the HuggingFace symlink caveat, and making the service start automatically after reboot.
+My contribution is the sections below: solving the OOM problem during weight loading, the HuggingFace symlink caveat, making the service start automatically after reboot, and running MTP speculative decoding with thinking enabled.
 
 ---
 
@@ -113,6 +113,54 @@ With `/swapfile2` in `/etc/fstab`, Docker enabled, and the container started onc
 
 ---
 
+## 4. MTP Speculative Decoding + Thinking Mode
+
+MTP (Multi-Token Prediction) speculative decoding significantly improves throughput for reasoning/thinking workloads — the original repo benchmarks show **+61% tok/s** in reasoning mode. For short non-reasoning replies it is slightly slower, so it is most useful when thinking is enabled.
+
+### Model variant
+
+Use [`txn545/Qwen3.5-122B-A10B-NVFP4`](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) — this checkpoint includes the extracted MTP weights (`mtp_weights.safetensors`, 4.7 GB BF16). The `RedHatAI` variant does not include MTP weights and cannot use speculative decoding.
+
+```bash
+huggingface-cli download txn545/Qwen3.5-122B-A10B-NVFP4
+```
+
+### vllm serve flags
+
+Add to the base configuration:
+
+```
+--enable-chunked-prefill
+--speculative-config '{"method":"mtp","num_speculative_tokens":1}'
+```
+
+### Important: max-num-batched-tokens
+
+Do **not** use a large `--max-num-batched-tokens` (e.g. 131072) with the MTP model on GB10. The txn545 checkpoint loads 77.26 GiB (vs ~71 GiB for RedHatAI), and the MTP draft model adds compilation overhead on top. During CUDA graph capture the system will run out of memory and hard-crash.
+
+Use `--max-num-batched-tokens 32768` — this is sufficient for all normal workloads and keeps compilation memory within bounds:
+
+```
+--max-num-batched-tokens 32768
+--gpu-memory-utilization 0.82
+```
+
+### Enabling thinking mode
+
+`--chat-template-kwargs` is not supported as a server flag in current vLLM nightly builds. Enable thinking per-request instead by injecting `chat_template_kwargs` into the request body:
+
+```json
+{
+  "model": "qwen3.5-122b-mtp",
+  "messages": [...],
+  "chat_template_kwargs": {"enable_thinking": true}
+}
+```
+
+If you use a proxy in front of vLLM (e.g. for model name normalization), the cleanest approach is to inject this field automatically for all requests to the MTP endpoint so callers don't need to set it explicitly.
+
+---
+
 ## Model Variant Used
 
-This setup uses [`RedHatAI/Qwen3.5-122B-A10B-NVFP4`](https://huggingface.co/RedHatAI/Qwen3.5-122B-A10B-NVFP4). This variant does not include MTP speculative decoding weights, so the `--speculative-config` flag should be omitted from the vllm serve command. For information on other variants and MTP setup, see the original repository linked above.
+Start with [`RedHatAI/Qwen3.5-122B-A10B-NVFP4`](https://huggingface.co/RedHatAI/Qwen3.5-122B-A10B-NVFP4) for a straightforward text-only setup without MTP. Switch to [`txn545/Qwen3.5-122B-A10B-NVFP4`](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) when you want speculative decoding with thinking enabled. For information on other variants see the original repository linked above.
