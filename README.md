@@ -1,11 +1,12 @@
 # vLLM – Qwen3.5-122B-A10B-NVFP4 on DGX Spark
 
-> **This repository has been archived and consolidated into [spark_vllm_docker](https://github.com/JungkwanBan/spark_vllm_docker).**
-> All future updates will be made in the unified repository.
+> **This is a derivative of [bjk110/SPARK_Qwen3.5-122B-A10B-NVFP4](https://github.com/bjk110/SPARK_Qwen3.5-122B-A10B-NVFP4)**, which was later consolidated into [spark_vllm_docker](https://github.com/JungkwanBan/spark_vllm_docker).
+> This fork adds documentation and fixes for the **unified-memory OOM problem** encountered when loading on a stock DGX Spark GB10 with 128 GB, covers the [RedHatAI/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/RedHatAI/Qwen3.5-122B-A10B-NVFP4) model variant, and documents the HuggingFace symlink mount caveat.
+> All credit for the original Dockerfile, patches, and benchmarks goes to the original authors.
 
 **English** | [한국어](README.ko.md)
 
-Run [txn545/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) with vLLM on **NVIDIA DGX Spark (GB10 / SM121)**.
+Run [RedHatAI/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/RedHatAI/Qwen3.5-122B-A10B-NVFP4) or [txn545/Qwen3.5-122B-A10B-NVFP4](https://huggingface.co/txn545/Qwen3.5-122B-A10B-NVFP4) with vLLM on **NVIDIA DGX Spark (GB10 / SM121)**.
 
 Self-contained multi-stage Docker build that compiles FlashInfer from source for SM121, installs vLLM nightly, and applies all NVFP4-specific patches required to serve the Qwen3.5 VL MoE architecture. No external pre-built base image required.
 
